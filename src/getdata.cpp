@@ -789,7 +789,7 @@ PyObject *GetDataSPASQL(Cursor *cur, Py_ssize_t column)
     memset(lang, 0, sizeof(lang));
     memset(dtype, 0, sizeof(dtype));
 
-    value = GetDataString(cur, column);
+    value = GetText(cur, column);
     if (!value)
         return Py_None;
 

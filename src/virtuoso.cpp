@@ -21,14 +21,16 @@ isVirtuoso(HDBC hdbc)
 bool
 isSPASQL(PyObject *pSql)
 {
-    char *query = PyString_AS_STRING(pSql);
-
+    PyObject *tbytes = PyUnicode_AsEncodedString(pSql, "UTF-8", "strict");
+    if (tbytes == NULL)
+        return false;
+    char *query = PyBytes_AS_STRING(tbytes);
+    Py_DECREF(tbytes);
     if (!query)
-	return false;
+	    return false;
     while (*query && isspace(*query))
-	query++;
-
+	    query++;
     if (!strncasecmp(query, "SPARQL", 6))
-	return true;
+	    return true;
     return false;
 }
