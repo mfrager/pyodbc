@@ -17,6 +17,7 @@
 #include "pyodbcmodule.h"
 #include "errors.h"
 #include "cnxninfo.h"
+#include "virtuoso.h"
 
 #if PY_MAJOR_VERSION < 3
 static bool IsStringType(PyObject* t) { return (void*)t == (void*)&PyString_Type; }
@@ -322,6 +323,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     cnxn->conv_count   = 0;
     cnxn->conv_types   = 0;
     cnxn->conv_funcs   = 0;
+    cnxn->virtuoso     = isVirtuoso(hdbc);
 
     cnxn->attrs_before = attrs_before_o.Detach();
 

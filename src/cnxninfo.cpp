@@ -75,7 +75,7 @@ inline void GetColumnSize(Connection* cnxn, SQLSMALLINT sqltype, int* psize)
     if (!SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_STMT, cnxn->hdbc, &hstmt)))
         return;
 
-    SQLINTEGER columnsize;
+    ULONG columnsize;
 
     if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, sqltype)) &&
         SQL_SUCCEEDED(SQLFetch(hstmt)) &&

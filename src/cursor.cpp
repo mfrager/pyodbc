@@ -24,6 +24,7 @@
 #include "errors.h"
 #include "getdata.h"
 #include "dbspecific.h"
+#include "virtuoso.h"
 #include <datetime.h>
 
 enum
@@ -808,6 +809,8 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
     }
 
     FreeParameterData(cur);
+
+    cur->spasql = (cur->cnxn->virtuoso && isSPASQL(pSql));
 
     if (ret == SQL_NO_DATA)
     {

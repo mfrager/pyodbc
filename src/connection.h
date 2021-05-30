@@ -75,6 +75,7 @@ struct Connection
     int varchar_maxlength;
     int wvarchar_maxlength;
     int binary_maxlength;
+    bool virtuoso;
 
     SQLLEN GetMaxLength(SQLSMALLINT ctype) const
     {
