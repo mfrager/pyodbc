@@ -194,36 +194,6 @@ PyObject* RaiseErrorFromHandle(Connection *conn, const char* szFunction, HDBC hd
 }
 
 
-inline void CopySqlState(const ODBCCHAR* src, char* dest)
-{
-    // Copies a SQLSTATE read as SQLWCHAR into a character buffer.  We know that SQLSTATEs are
-    // composed of ASCII characters and we need one standard to compare when choosing
-    // exceptions.
-    //
-    // Strangely, even when the error messages are UTF-8, PostgreSQL and MySQL encode the
-    // sqlstate as UTF-16LE.  We'll simply copy all non-zero bytes, with some checks for
-    // running off the end of the buffers which will work for ASCII, UTF8, and UTF16 LE & BE.
-    // It would work for UTF32 if I increase the size of the ODBCCHAR buffer to handle it.
-    //
-    // (In the worst case, if a driver does something totally weird, we'll have an incomplete
-    // SQLSTATE.)
-    //
-
-    const char* pchSrc = (const char*)src;
-    const char* pchSrcMax = pchSrc + sizeof(ODBCCHAR) * 5;
-    char* pchDest = dest;         // Where we are copying into dest
-    char* pchDestMax = dest + 5;  // We know a SQLSTATE is 5 characters long
-
-    while (pchDest < pchDestMax && pchSrc < pchSrcMax)
-    {
-        if (*pchSrc)
-            *pchDest++ = *pchSrc;
-        pchSrc++;
-    }
-    *pchDest = 0;
-}
-
-
 PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc, HSTMT hstmt)
 {
     TRACE("In RaiseError(%s)!\n", szFunction);
@@ -247,7 +217,13 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
     SQLSMALLINT cchMsg;
 
     ODBCCHAR sqlstateT[6];
-    ODBCCHAR szMsg[1024];
+    SQLSMALLINT msgLen = 1023;
+    ODBCCHAR *szMsg = (ODBCCHAR*) pyodbc_malloc((msgLen + 1) * sizeof(ODBCCHAR));
+
+    if (!szMsg) {
+        PyErr_NoMemory();
+        return 0;
+    }
 
     if (hstmt != SQL_NULL_HANDLE)
     {
@@ -281,10 +257,25 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
 
         SQLRETURN ret;
         Py_BEGIN_ALLOW_THREADS
-        ret = SQLGetDiagRecW(nHandleType, h, iRecord, (SQLWCHAR*)sqlstateT, &nNativeError, (SQLWCHAR*)szMsg, (short)(_countof(szMsg)-1), &cchMsg);
+        ret = SQLGetDiagRecW(nHandleType, h, iRecord, (SQLWCHAR*)sqlstateT, &nNativeError, (SQLWCHAR*)szMsg, msgLen, &cchMsg);
         Py_END_ALLOW_THREADS
         if (!SQL_SUCCEEDED(ret))
             break;
+
+        // If needed, allocate a bigger error message buffer and retry.
+        if (cchMsg > msgLen - 1) {
+            msgLen = cchMsg + 1;
+            if (!pyodbc_realloc((BYTE**) &szMsg, (msgLen + 1) * sizeof(ODBCCHAR))) {
+                PyErr_NoMemory();
+                pyodbc_free(szMsg);
+                return 0;
+            }
+            Py_BEGIN_ALLOW_THREADS
+            ret = SQLGetDiagRecW(nHandleType, h, iRecord, (SQLWCHAR*)sqlstateT, &nNativeError, (SQLWCHAR*)szMsg, msgLen, &cchMsg);
+            Py_END_ALLOW_THREADS
+            if (!SQL_SUCCEEDED(ret))
+                break;
+        }
 
         // Not always NULL terminated (MS Access)
         sqlstateT[5] = 0;
@@ -302,8 +293,11 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
                 // exception class and append the calling function name.
                 CopySqlState(sqlstateT, sqlstate);
                 msg = PyUnicode_FromFormat("[%s] %V (%ld) (%s)", sqlstate, msgStr.Get(), "(null)", (long)nNativeError, szFunction);
-                if (!msg)
+                if (!msg) {
+                    PyErr_NoMemory();
+                    pyodbc_free(szMsg);
                     return 0;
+                }
             }
             else
             {
@@ -328,6 +322,9 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
 #endif
     }
 
+    // Raw message buffer not needed anymore
+    pyodbc_free(szMsg);
+
     if (!msg || PyUnicode_GetSize(msg.Get()) == 0)
     {
         // This only happens using unixODBC.  (Haven't tried iODBC yet.)  Either the driver or the driver manager is
@@ -347,14 +344,11 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
 
 static bool GetSqlState(HSTMT hstmt, char* szSqlState)
 {
-    SQLCHAR szMsg[300];
-    SQLSMALLINT cbMsg = (SQLSMALLINT)(_countof(szMsg) - 1);
-    SQLINTEGER nNative;
     SQLSMALLINT cchMsg;
     SQLRETURN ret;
 
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLGetDiagRec(SQL_HANDLE_STMT, hstmt, 1, (SQLCHAR*)szSqlState, &nNative, szMsg, cbMsg, &cchMsg);
+    ret = SQLGetDiagField(SQL_HANDLE_STMT, hstmt, 1, SQL_DIAG_SQLSTATE, (SQLCHAR*)szSqlState, 5, &cchMsg);
     Py_END_ALLOW_THREADS
     return SQL_SUCCEEDED(ret);
 }

@@ -623,7 +623,38 @@ class PGTestCase(unittest.TestCase):
         result = self.cursor.execute("select s from t1").fetchone()[0]
 
         self.assertEqual(result, v)
-        
+
+    def test_cursor_messages(self):
+        """
+        Test the Cursor.messages attribute.
+        """
+        # self.cursor is used in setUp, hence is not brand new at this point
+        brand_new_cursor = self.cnxn.cursor()
+        self.assertIsNone(brand_new_cursor.messages)
+
+        # using INFO message level because they are always sent to the client regardless of
+        # client_min_messages: https://www.postgresql.org/docs/11/runtime-config-client.html
+        for msg in ('hello world', 'ABCDEFGHIJ' * 800):
+            self.cursor.execute("""
+                CREATE OR REPLACE PROCEDURE test_cursor_messages()
+                LANGUAGE plpgsql
+                AS $$
+                BEGIN
+                    RAISE INFO '{}' USING ERRCODE = '01000';
+                END;
+                $$;
+            """.format(msg))
+            self.cursor.execute("CALL test_cursor_messages();")
+            messages = self.cursor.messages
+            self.assertTrue(type(messages) is list)
+            self.assertTrue(len(messages) > 0)
+            self.assertTrue(all(type(m) is tuple for m in messages))
+            self.assertTrue(all(len(m) == 2 for m in messages))
+            self.assertTrue(all(type(m[0]) is str for m in messages))
+            self.assertTrue(all(type(m[1]) is str for m in messages))
+            self.assertTrue(all(m[0] == '[01000] (-1)' for m in messages))
+            self.assertTrue(''.join(m[1] for m in messages).endswith(msg))
+
     def test_output_conversion(self):
         # Note the use of SQL_WVARCHAR, not SQL_VARCHAR.
 

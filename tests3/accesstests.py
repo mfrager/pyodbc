@@ -94,6 +94,11 @@ class AccessTestCase(unittest.TestCase):
             # If we've already closed the cursor or connection, exceptions are thrown.
             pass
 
+    def test_closed_reflects_connection_state(self):
+        self.assertFalse(self.cnxn.closed)
+        self.cnxn.close()
+        self.assertTrue(self.cnxn.closed)
+
     def test_multiple_bindings(self):
         "More than one bind and select on a cursor"
         self.cursor.execute("create table t1(n int)")
@@ -607,9 +612,10 @@ def main():
     CNXNSTRING = 'DRIVER={%s};DBQ=%s;ExtendedAnsiSQL=1' % (DRIVERS[args.type], dest)
     print(CNXNSTRING)
 
-    cnxn = pyodbc.connect(CNXNSTRING)
-    print_library_info(cnxn)
-    cnxn.close()
+    if args.verbose:
+        cnxn = pyodbc.connect(CNXNSTRING)
+        print_library_info(cnxn)
+        cnxn.close()
 
     suite = load_tests(AccessTestCase, args.test)
 
